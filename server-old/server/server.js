@@ -11,8 +11,24 @@ mongoose.set("autoIndex", false);
 
 const { createEmailOutboxWorker } = require("./services/emailOutboxWorker");
 const initialize = require("./config/initialize");
-const modelNames = ["User", "Student", "StudentInvitation", "StudentPasswordReset", "EmailOutbox", "DataMigration", "AuthRateWindow", "CourseOffering", "Enrollment", "AttendanceSession", "AttendanceMark", "AttendanceChange", "Assessment", "AssessmentResult", "AssessmentChange", "AuditEvent", "Assignment"];
-for (const name of modelNames) require(`./models/${name}`);
+// Keep model imports static so deployment tracing includes every schema file.
+require("./models/User");
+require("./models/Student");
+require("./models/StudentInvitation");
+require("./models/StudentPasswordReset");
+require("./models/EmailOutbox");
+require("./models/DataMigration");
+require("./models/AuthRateWindow");
+require("./models/CourseOffering");
+require("./models/Enrollment");
+require("./models/AttendanceSession");
+require("./models/AttendanceMark");
+require("./models/AttendanceChange");
+require("./models/Assessment");
+require("./models/AssessmentResult");
+require("./models/AssessmentChange");
+require("./models/AuditEvent");
+require("./models/Assignment");
 const authRoutes = require("./routes/authRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const academicRoutes = require("./routes/academicRoutes");
