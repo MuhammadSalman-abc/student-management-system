@@ -41,9 +41,13 @@ const vercelOrigins = [process.env.VERCEL_URL, process.env.VERCEL_PROJECT_PRODUC
 const deploymentHostname = process.env.NODE_ENV === "production"
   ? process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL
   : process.env.VERCEL_URL;
-if (!process.env.CLIENT_APP_URL && deploymentHostname) {
-  process.env.CLIENT_APP_URL = deploymentHostname.includes("://") ? deploymentHostname : `https://${deploymentHostname}`;
-}
+const deploymentOrigin = deploymentHostname
+  ? new URL(deploymentHostname.includes("://") ? deploymentHostname : `https://${deploymentHostname}`).origin
+  : "";
+// A Vercel deployment always uses its own HTTPS domain. Prefer it in
+// production so copied localhost values cannot prevent API startup.
+if (process.env.NODE_ENV === "production" && deploymentOrigin) process.env.CLIENT_APP_URL = deploymentOrigin;
+else if (!process.env.CLIENT_APP_URL && deploymentOrigin) process.env.CLIENT_APP_URL = deploymentOrigin;
 
 const app = express();
 // Vercel's Express service invokes this app directly. Initialise lazily here so
@@ -64,7 +68,9 @@ app.use(async (req, res, next) => {
     });
   }
 });
-const configuredOrigins = process.env.CLIENT_ORIGINS
+const configuredOrigins = process.env.NODE_ENV === "production" && deploymentOrigin
+  ? [deploymentOrigin]
+  : process.env.CLIENT_ORIGINS
   ? process.env.CLIENT_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)
   : process.env.NODE_ENV === "production" ? [] : ["http://localhost:5173", "http://127.0.0.1:5173"];
 const allowedOrigins = [...new Set([...configuredOrigins, ...vercelOrigins])];
