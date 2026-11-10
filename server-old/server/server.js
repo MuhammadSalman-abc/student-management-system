@@ -30,6 +30,24 @@ if (!process.env.CLIENT_APP_URL && deploymentHostname) {
 }
 
 const app = express();
+// Vercel's Express service invokes this app directly. Initialise lazily here so
+// the same app works for both local `app.listen` and serverless requests.
+app.use(async (req, res, next) => {
+  try {
+    await initialize({ allowedOrigins });
+    return next();
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: "error",
+      event: "api_initialization_failed",
+      errorType: error.name || "Error",
+      message: error.message,
+    }));
+    return res.status(503).json({
+      message: "StudentHub is temporarily unavailable. Check the server configuration.",
+    });
+  }
+});
 const configuredOrigins = process.env.CLIENT_ORIGINS
   ? process.env.CLIENT_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)
   : process.env.NODE_ENV === "production" ? [] : ["http://localhost:5173", "http://127.0.0.1:5173"];
