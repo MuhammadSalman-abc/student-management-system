@@ -1,0 +1,33 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "Student Management System API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "check": "node scripts/checkSyntax.js",
+    "ensure-indexes": "node scripts/ensureIndexes.js",
+    "migrate:legacy-academics": "node scripts/migrateLegacyAcademics.js",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js",
+    "create-admin": "node scripts/createAdmin.js",
+    "reset-admin-password": "node scripts/resetAdminPassword.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.9.2",
+    "nodemailer": "^10.4.0"
+  },
+  "devDependencies": {
+    "nodemon": "3.1.11"
+  }
+}

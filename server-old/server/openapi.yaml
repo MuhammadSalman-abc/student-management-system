@@ -1,0 +1,891 @@
+openapi: 3.1.0
+info:
+  title: StudentHub API
+  version: 1.0.0
+  description: |
+    HTTP contract for the current Student Management System implementation.
+    All application endpoints are under `/api/v1`. The former `/api` prefix
+    is retained temporarily as a deprecated compatibility alias. This contract
+    documents route access and core request shapes; institution-specific policy
+    and database availability still require stakeholder and deployment review.
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local development
+tags:
+  - name: Authentication
+  - name: Documentation
+  - name: Students
+  - name: Academics
+  - name: Reports
+security: []
+paths:
+  /openapi.yaml:
+    get:
+      tags: [Documentation]
+      summary: Download the reviewed API contract
+      description: Public endpoint. Responses use no-cache so clients can retrieve the current contract.
+      responses:
+        '200':
+          description: OpenAPI 3.1 YAML document.
+          content:
+            application/yaml:
+              schema: { type: string }
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Sign in
+      description: IP rate-limited. Sets an HttpOnly session cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+                password: { type: string, maxLength: 128, format: password }
+      responses:
+        '200': { description: Signed in; returns user and sets sms_session cookie. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { description: Invalid credentials. }
+        '403': { description: Account inactive. }
+        '429': { description: Too many authentication requests. }
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Sign out and clear the session cookie
+      responses:
+        '200': { description: Session cookie cleared. }
+  /auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get the current account
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Current active account. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [Authentication]
+      summary: Update the preferred display name
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                displayName: { type: string, maxLength: 80 }
+      responses:
+        '200': { description: Profile updated. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/me/photo:
+    get:
+      tags: [Authentication]
+      summary: Get the signed-in account's profile photo
+      description: Authenticated account owner only; responses are private and not cached.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: JPEG profile photo uploaded by the authenticated account owner.
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: No profile photo has been uploaded. }
+        '503': { description: Profile photo could not be loaded. }
+    put:
+      tags: [Authentication]
+      summary: Upload or replace the signed-in account's profile photo
+      description: Accepts a client-resized JPEG up to 400 KiB. The photo is stored on the account and can be removed by its owner.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema: { type: string, format: binary }
+      responses:
+        '200': { description: Profile photo saved. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { description: Upload exceeds 400 KiB. }
+        '415': { description: Only JPEG uploads are accepted. }
+        '503': { description: Profile photo could not be saved. }
+    delete:
+      tags: [Authentication]
+      summary: Remove the signed-in account's profile photo
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Profile photo removed. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { description: Profile photo could not be removed. }
+  /auth/password:
+    post:
+      tags: [Authentication]
+      summary: Change the signed-in account password
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string, maxLength: 128, format: password }
+                newPassword: { type: string, minLength: 12, maxLength: 128, format: password }
+      responses:
+        '200': { description: Password changed; other sessions are revoked. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: Password changed concurrently. }
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Legacy self-registration endpoint
+      description: Disabled; student accounts must be created through an administrator invitation.
+      responses:
+        '410': { description: Self-registration is retired. }
+  /auth/invitations/inspect:
+    post:
+      tags: [Authentication]
+      summary: Inspect a student invitation
+      description: IP rate-limited to control anonymous token lookups.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { $ref: '#/components/schemas/OpaqueToken' }
+      responses:
+        '200': { description: Invitation student identity and expiration. }
+        '410': { description: Invitation invalid, expired, or unavailable. }
+        '429': { description: Too many authentication requests. }
+  /auth/invitations/accept:
+    post:
+      tags: [Authentication]
+      summary: Accept a student invitation and activate the account
+      description: IP rate-limited. Password must contain 12–128 characters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { $ref: '#/components/schemas/OpaqueToken' }
+                password: { type: string, minLength: 12, maxLength: 128, format: password }
+      responses:
+        '201': { description: Account activated and session cookie set. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Student account cannot be activated. }
+        '410': { description: Invitation invalid, expired, or already used. }
+        '429': { description: Too many authentication requests. }
+  /auth/password-resets/inspect:
+    post:
+      tags: [Authentication]
+      summary: Inspect an administrator-issued password-reset link
+      description: IP rate-limited; does not accept or disclose account lookup by email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { $ref: '#/components/schemas/OpaqueToken' }
+      responses:
+        '200': { description: Student display identity and link expiration. }
+        '410': { description: Link invalid, expired, or unavailable. }
+        '429': { description: Too many authentication requests. }
+  /auth/password-resets/complete:
+    post:
+      tags: [Authentication]
+      summary: Complete a student password reset
+      description: IP rate-limited; consumes the one-time token and revokes existing sessions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { $ref: '#/components/schemas/OpaqueToken' }
+                password: { type: string, minLength: 12, maxLength: 128, format: password }
+      responses:
+        '200': { description: Password changed. User must sign in again. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '410': { description: Link invalid, expired, or already used. }
+        '429': { description: Too many authentication requests. }
+
+  /students/me:
+    get:
+      tags: [Students]
+      summary: Get the signed-in student's own profile
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Own student record. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Linked student record not found. }
+  /students/me/attendance:
+    get:
+      tags: [Students]
+      summary: List the signed-in student's finalized attendance
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200': { description: Paginated own finalized attendance. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /students/me/results:
+    get:
+      tags: [Students]
+      summary: List the signed-in student's published assessment results
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Paginated own published results. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /students:
+    get:
+      tags: [Students]
+      summary: Search and paginate student records
+      description: Administrator only. Supports page, limit, search, course, sort, and status filters.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/StudentLimit' }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: course, in: query, schema: { type: string, maxLength: 120 } }
+        - { name: sort, in: query, schema: { type: string, enum: [name, attendance] } }
+        - { name: status, in: query, schema: { type: string, enum: [active, archived, all] } }
+      responses:
+        '200': { description: Paginated student roster. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Students]
+      summary: Create a student record
+      description: Administrator only; account credentials are provisioned separately.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StudentInput' }
+      responses:
+        '201': { description: Student record created. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Duplicate student number or email. }
+  /students/import:
+    post:
+      tags: [Students]
+      summary: Import a validated roster batch
+      description: Administrator only; up to 100 records are committed atomically with an audit event.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [students]
+              properties:
+                students:
+                  type: array
+                  maxItems: 100
+                  items: { $ref: '#/components/schemas/StudentInput' }
+      responses:
+        '201': { description: Roster records imported. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Duplicate record conflict. }
+  /students/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Students]
+      summary: Get a student record
+      description: Administrator only.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Student record. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Student not found. }
+    put:
+      tags: [Students]
+      summary: Update a student record
+      description: Administrator only; linked account identity updates commit transactionally.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StudentUpdate' }
+      responses:
+        '200': { description: Student record updated. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Student not found. }
+        '409': { description: Duplicate identity or broken linked account. }
+    delete:
+      tags: [Students]
+      summary: Archive a student record
+      description: Administrator only; history is retained and active access/enrollments are revoked.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Student archived. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Student not found. }
+  /students/{id}/restore:
+    patch:
+      tags: [Students]
+      summary: Restore an archived student
+      description: Administrator only; previous withdrawn enrollments remain historical.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { description: Student restored. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Archived student not found. }
+  /students/{id}/invitation:
+    post:
+      tags: [Students]
+      summary: Issue or replace a student activation invitation
+      description: Administrator only; returns a one-time link that expires after 48 hours and a delivery status. When SMTP is configured, an encrypted transactional outbox queues email delivery and retries transient SMTP failures.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '201': { description: Invitation link created; response includes delivery.status as queued or not_configured. Roster delivery status advances to sent or failed after background processing. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Active student not found. }
+        '409': { description: Student already has an account. }
+  /students/{id}/password-reset:
+    post:
+      tags: [Students]
+      summary: Issue a one-time password-reset link
+      description: Administrator only; identity must be verified through an institution-approved process before issuing the link. With SMTP configured, an encrypted transactional outbox queues the one-time email for retryable delivery.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '201': { description: Reset link created; raw token is not stored or audited. delivery.status is queued or not_configured; subsequent delivery status is persisted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Active student not found. }
+        '409': { description: Active linked account is unavailable. }
+  /students/{id}/account-status:
+    patch:
+      tags: [Students]
+      summary: Suspend or reactivate student account access
+      description: Administrator only; status transition is audited and revokes prior sessions.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [active]
+              properties:
+                active: { type: boolean }
+      responses:
+        '200': { description: Account status updated. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Student not found. }
+
+  /academics/dashboard/summary:
+    get:
+      tags: [Academics]
+      summary: Get the administrative dashboard summary
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      responses:
+        '200': { description: Summary of active roster, enrollment, attendance, and published results. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /academics/offerings:
+    get:
+      tags: [Academics]
+      summary: List course offerings
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, archived, all] } }
+      responses:
+        '200': { description: Course offerings. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Academics]
+      summary: Create a course offering
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [courseCode, courseName, term, section]
+              properties:
+                courseCode: { type: string, maxLength: 24 }
+                courseName: { type: string, maxLength: 120 }
+                term: { type: string, maxLength: 60 }
+                section: { type: string, maxLength: 30 }
+                startDate: { type: string, format: date-time }
+                endDate: { type: string, format: date-time }
+      responses:
+        '201': { description: Course offering created. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Offering already exists. }
+  /academics/offerings/{id}/archive:
+    post:
+      tags: [Academics]
+      summary: Archive a course offering
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { description: Offering archived when no active enrollments remain. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Active enrollments prevent archive. }
+  /academics/offerings/{id}/restore:
+    post:
+      tags: [Academics]
+      summary: Restore a course offering
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { description: Offering restored. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Archived offering not found. }
+  /academics/enrollments:
+    get:
+      tags: [Academics]
+      summary: List active enrollments or enrollment history
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, withdrawn, all] } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit100' }
+      responses:
+        '200': { description: Paginated enrollment records. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Academics]
+      summary: Enroll an active student in an active offering
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentId, offeringId]
+              properties:
+                studentId: { type: string }
+                offeringId: { type: string }
+      responses:
+        '201': { description: Enrollment created or reactivated. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Student or offering is unavailable, or enrollment conflicts. }
+  /academics/enrollments/{id}:
+    delete:
+      tags: [Academics]
+      summary: Withdraw an enrollment
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { description: Enrollment withdrawn; history retained. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Active enrollment not found. }
+  /academics/attendance/sessions:
+    post:
+      tags: [Academics]
+      summary: Open an attendance session
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [offeringId, sessionDate]
+              properties:
+                offeringId: { type: string }
+                sessionDate: { type: string, format: date }
+      responses:
+        '201': { description: Draft attendance session created from the active roster. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Session conflicts with an existing record. }
+  /academics/attendance/sessions/{id}:
+    get:
+      tags: [Academics]
+      summary: Get an attendance session and roster
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { description: Attendance session and marks. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Session not found. }
+  /academics/attendance/sessions/{id}/marks:
+    put:
+      tags: [Academics]
+      summary: Save draft attendance marks
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [marks]
+              properties:
+                marks:
+                  type: array
+                  items:
+                    type: object
+                    required: [studentId, status]
+                    properties:
+                      studentId: { type: string }
+                      status: { type: string, enum: [present, absent, late, excused] }
+      responses:
+        '200': { description: Draft marks saved with revision protection. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Stale revision or roster changed. }
+  /academics/attendance/sessions/{id}/finalize:
+    post:
+      tags: [Academics]
+      summary: Finalize an attendance session
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { description: Session finalized and visible to students. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Roster changed or session is not ready. }
+  /academics/attendance/sessions/{id}/corrections:
+    post:
+      tags: [Academics]
+      summary: Correct finalized attendance marks
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, marks]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+                marks: { type: array, items: { type: object } }
+      responses:
+        '200': { description: Correction and audit history recorded transactionally. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Attendance session cannot be corrected. }
+  /academics/assessments:
+    get:
+      tags: [Academics]
+      summary: List assessments for an offering
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: offeringId, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Assessment list. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Academics]
+      summary: Create an assessment
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [offeringId, title, maxScore]
+              properties:
+                offeringId: { type: string }
+                title: { type: string, maxLength: 120 }
+                type: { type: string, enum: [assignment, quiz, midterm, final, project, other], default: assignment }
+                maxScore: { type: number, exclusiveMinimum: 0, maximum: 100000 }
+                weight: { type: number, minimum: 0, maximum: 100 }
+                dueDate: { type: string, format: date-time }
+      responses:
+        '201': { description: Assessment created in draft status. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /academics/assessments/{id}:
+    get:
+      tags: [Academics]
+      summary: Get an assessment and current roster scores
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      responses:
+        '200': { description: Assessment and roster. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Assessment not found. }
+  /academics/assessments/{id}/history:
+    get:
+      tags: [Academics]
+      summary: List published-grade correction history
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Paginated correction history. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /academics/assessments/{id}/grades:
+    put:
+      tags: [Academics]
+      summary: Save draft grades using an expected revision
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [grades, expectedRevision]
+              properties:
+                expectedRevision: { type: integer, minimum: 0 }
+                grades: { type: array, items: { type: object } }
+      responses:
+        '200': { description: Draft grades saved. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Assessment revision is stale. }
+  /academics/assessments/{id}/publish:
+    post:
+      tags: [Academics]
+      summary: Publish an assessment with a complete roster
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedRevision]
+              properties:
+                expectedRevision: { type: integer, minimum: 0 }
+      responses:
+        '200': { description: Assessment published for students. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Incomplete roster scores or stale revision. }
+  /academics/assessments/{id}/corrections:
+    post:
+      tags: [Academics]
+      summary: Correct published grades with a reason
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, grades, expectedRevision]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+                expectedRevision: { type: integer, minimum: 0 }
+                grades: { type: array, items: { type: object } }
+      responses:
+        '200': { description: Corrected results and audit history saved. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Stale revision or assessment is not published. }
+  /academics/reports/export.csv:
+    get:
+      tags: [Reports]
+      summary: Export finalized attendance or published assessment results
+      description: Administrator only; CSV is bounded to 20,000 rows and spreadsheet formula cells are escaped.
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: type, in: query, required: true, schema: { type: string, enum: [attendance, results] } }
+        - { name: offeringId, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: CSV file; export is audit-logged.
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { description: Requested export exceeds the row limit. }
+  /academics/audit-events:
+    get:
+      tags: [Reports]
+      summary: Browse sanitized administrative audit events
+      security: [{ sessionCookie: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Paginated audit events including account password changes, student creation and updated field names (without field values), ordinary and legacy enrollment creation, attendance finalization, and assessment publication with record counts; secrets and reset tokens are excluded. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sms_session
+      description: HttpOnly, SameSite=Lax session cookie set by login and invitation acceptance.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Supported for non-browser API clients.
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+    Page:
+      name: page
+      in: query
+      description: Numbered pagination is bounded to an offset of 100,000 records; larger datasets should use a cursor-based endpoint.
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    Limit100:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    StudentLimit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 50, default: 5 }
+  schemas:
+    OpaqueToken:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{43}$'
+      description: Opaque 256-bit URL-safe token; never log or persist the raw value.
+    StudentInput:
+      type: object
+      required: [name, email]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email, maxLength: 254 }
+        studentNumber: { type: string, maxLength: 40, description: Optional institution-provided identifier. }
+        course: { type: string, maxLength: 120, description: Optional legacy text field; current course membership is represented by enrollment. }
+        batch: { type: string, maxLength: 120, description: Optional legacy text field; current course membership is represented by enrollment. }
+        attendance: { type: number, minimum: 0, maximum: 100, description: Optional legacy snapshot; omit for new students. }
+        assignmentScore: { type: number, minimum: 0, maximum: 100, description: Optional legacy snapshot; omit for new students. }
+        finalScore: { type: number, minimum: 0, maximum: 100, description: Optional legacy snapshot; omit for new students. }
+    StudentUpdate:
+      type: object
+      description: Partial update; only supported student profile fields are accepted.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        email: { type: string, format: email, maxLength: 254 }
+        studentNumber: { type: string, maxLength: 40, description: Use an empty string to clear the optional identifier. }
+        course: { type: string, maxLength: 120, description: Optional legacy text field; use an empty string to clear. }
+        batch: { type: string, maxLength: 120, description: Optional legacy text field; use an empty string to clear. }
+        attendance: { type: number, minimum: 0, maximum: 100, description: Optional legacy snapshot; empty string clears it. }
+        assignmentScore: { type: number, minimum: 0, maximum: 100, description: Optional legacy snapshot; empty string clears it. }
+        finalScore: { type: number, minimum: 0, maximum: 100, description: Optional legacy snapshot; empty string clears it. }
+    Error:
+      type: object
+      properties:
+        message: { type: string }
+        requestId: { type: string, format: uuid, description: Present on unexpected server errors; share with support. }
+        errors: { type: array, items: { type: object } }
+  responses:
+    BadRequest:
+      description: Request shape or value is invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Authentication is missing, invalid, expired, or revoked.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated account does not have the required role.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

@@ -1,0 +1,19 @@
+# Dependencies and generated output
+**/node_modules/
+**/dist/
+**/coverage/
+**/backups/
+server-old/server/legacy-academic-mapping*.json
+.vercel/
+
+# Local configuration and secrets
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+
+# Local/editor artifacts
+*.log
+.DS_Store
+Thumbs.db
+.vscode/

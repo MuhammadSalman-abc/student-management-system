@@ -1,0 +1,24 @@
+{
+  "name": "student-management-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Student Management System workspace",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "dev:client": "npm --prefix client-old/client run dev",
+    "lint:client": "npm --prefix client-old/client run lint",
+    "build:client": "npm --prefix client-old/client run build",
+    "check:server": "npm --prefix server-old/server run check",
+    "dev:server": "npm --prefix server-old/server run dev",
+    "start:server": "npm --prefix server-old/server start",
+    "ensure:indexes": "npm --prefix server-old/server run ensure-indexes",
+    "migrate:legacy-academics": "npm --prefix server-old/server run migrate:legacy-academics --",
+    "backup:data": "npm --prefix server-old/server run backup",
+    "restore:data": "npm --prefix server-old/server run restore",
+    "create-admin": "npm --prefix server-old/server run create-admin",
+    "reset-admin-password": "npm --prefix server-old/server run reset-admin-password --"
+  }
+}
