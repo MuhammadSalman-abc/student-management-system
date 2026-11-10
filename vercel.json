@@ -8,7 +8,7 @@
     "server": {
       "root": "server-old/server",
       "framework": "express",
-      "entrypoint": "index.mjs"
+      "entrypoint": "server.js"
     }
   },
   "rewrites": [

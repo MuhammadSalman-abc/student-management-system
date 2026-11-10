@@ -203,4 +203,8 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, start, initialize: () => initialize({ allowedOrigins }) };
+// Export the Express app itself. Vercel detects server.js as the service
+// entrypoint and requires the default CommonJS export to be callable.
+module.exports = app;
+module.exports.start = start;
+module.exports.initialize = () => initialize({ allowedOrigins });
