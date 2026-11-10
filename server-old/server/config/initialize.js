@@ -16,9 +16,6 @@ const validateEnvironment = (allowedOrigins) => {
   }
   getSessionSettings();
   const emailSettings = getEmailSettings();
-  if (process.env.NODE_ENV === "production" && !emailSettings.configured) {
-    throw new Error("SMTP_HOST and SMTP_FROM are required for production student account email delivery.");
-  }
   if (emailSettings.configured) getEncryptionKey();
   if (!process.env.CLIENT_APP_URL) throw new Error("CLIENT_APP_URL is required for student invitations.");
   if (!allowedOrigins.length) throw new Error("CLIENT_ORIGINS must contain at least one frontend origin.");
