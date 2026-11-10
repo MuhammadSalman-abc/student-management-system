@@ -7,6 +7,8 @@ server-old/server/legacy-academic-mapping*.json
 .vercel/
 
 # Local configuration and secrets
+.env
+.env.*
 **/.env
 **/.env.*
 !**/.env.example
