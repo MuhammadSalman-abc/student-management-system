@@ -1,6 +1,6 @@
-// Keep the Express import in this Vercel entrypoint. Vercel uses it to detect
-// that this service is an Express application before loading the exported app.
-require("express");
+const http = require("node:http");
 const { app } = require("./server");
 
-module.exports = app;
+// Vercel Services accepts a Node HTTP server as its entrypoint. Wrapping the
+// Express app avoids its CJS-to-ESM export conversion losing the callable app.
+module.exports = http.createServer(app);
